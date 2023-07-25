@@ -13,10 +13,19 @@ To simplify this, Opt.py provides a simple command line interface modeled after 
 Supported file formats are: .zip, .tar.bz2, .tar, .tar.gz, .tgz, .tar.xz
 
 ## Install
+1. Install Python3 and pip as follows in Ubuntu/Debian Linux:
+```
+sudo apt install python3.6 python3-pip
+```
 
-TODO install python3
+2. Download Opt.py and set execute permissions:
+```
+curl -LJO https://github.com/byte-cook/opt/raw/main/opt.py
+curl -LJO https://github.com/byte-cook/opt/raw/main/fileutil.py
+chmod +x opt.py
+```
 
-Install Opt.py in the /opt directory:
+3. Install Opt.py in the /opt directory:
 ```
 ./opt.py install opt opt.py fileutil.py
 ```
