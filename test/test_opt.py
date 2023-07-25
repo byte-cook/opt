@@ -75,9 +75,18 @@ class TestOpt(unittest.TestCase):
         self._installOrUpdate(APP_NAME, os.path.join(PROJECT_DIR, 'resources'), ['test_file1.txt', 'test_folder1_test_file1.zip'])
 
     def test_update(self):
-        print('++++++++++ TEST update ++++++++++')
+        print('++++++++++ TEST UPDATE ++++++++++')
         self._installOrUpdate(APP_NAME, os.path.join(PROJECT_DIR, 'resources/test_file1.txt'), ['test_file1.txt'])
         self._installOrUpdate(APP_NAME, os.path.join(PROJECT_DIR, 'resources/test_file2.txt'), ['test_file2.txt'], update=True)
+    
+    def test_list(self):
+        print('++++++++++ TEST LIST ++++++++++')
+        APP_NAME_2 = 'app-v2'
+        self._installOrUpdate(APP_NAME, os.path.join(PROJECT_DIR, 'resources/test_file1.txt'))
+        self._installOrUpdate(APP_NAME_2, os.path.join(PROJECT_DIR, 'resources/test_file1.txt'))
+        self._installOrUpdate('audiosolutions-2.3.0', os.path.join(PROJECT_DIR, 'resources/test_file1.txt'))
+        opt.main(['--debug', '-y', 'list'])
+        opt.main(['--debug', '-y', 'list', APP_NAME])
     
     def test_path(self):
         print('++++++++++ TEST PATH ++++++++++')
@@ -109,6 +118,18 @@ class TestOpt(unittest.TestCase):
         self._remove(APP_NAME)
         self._remove(APP_NAME_2)
         self.assertTrue(self._isDirEmpty(opt.INSTALL_DIR))
+    def test_alias_update(self):
+        """Update of alias app is not allowed."""
+        print('++++++++++ TEST ALIAS UPDATE ++++++++++')
+        APP_ALIAS = 'app-alias'
+        self._installOrUpdate(APP_NAME, os.path.join(PROJECT_DIR, 'resources/test_file1.txt'))
+        print('+++++ alias')
+        opt.main(['--debug', '-y', 'alias', APP_ALIAS, APP_NAME])
+        print('+++++ update')
+        opt.main(['--debug', '-y', 'update', APP_ALIAS, os.path.join(PROJECT_DIR, 'resources/test_file2.txt')])
+        self.assertTrue(os.path.islink(self._getInstallDir(APP_ALIAS)))
+        expectedFile = os.path.join(self._getInstallDir(APP_ALIAS), 'test_file1.txt')
+        self.assertTrue(os.path.exists(expectedFile), msg=expectedFile)
     
     def test_remove(self):
         print('++++++++++ TEST REMOVE ++++++++++')
