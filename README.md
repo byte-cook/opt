@@ -15,7 +15,7 @@ Supported file formats are: .zip, .tar.bz2, .tar, .tar.gz, .tgz, .tar.xz
 ## Install
 1. Install Python3 and pip as follows in Ubuntu/Debian Linux:
 ```
-sudo apt install python3.6 python3-pip
+sudo apt install python3.6
 ```
 
 2. Download Opt.py and set execute permissions:
@@ -30,6 +30,13 @@ chmod +x opt.py
 ./opt.py install opt opt.py fileutil.py
 ```
 The $PATH variable is automatically extended!
+
+## Uninstall
+
+Use this command:
+```
+./opt.py remove opt
+```
 
 ## Example usage
 
@@ -53,7 +60,7 @@ Install another version of the same application:
 opt.py install application-19-81 application-19.81.tar.gz
 ```
 
-Create alias (application refers to application-12-3):
+Create alias ("application" refers to "application-12-3"):
 ```
 opt.py alias application application-12-3
 ```
@@ -99,12 +106,5 @@ test_opt.py TestOpt.test_remove_unmanaged_forced
 Clean up test directory:
 ```
 test_opt.py TestOpt.test_clean
-```
-
-## Uninstall
-
-Use this command:
-```
-./opt.py remove opt
 ```
 
