@@ -85,7 +85,6 @@ def extractArchive(file, targetDir):
 
 def chown_recursively(dir, uid=0, gid=0, follow_symlinks=False):
     """Set owner of complete dir to the given value."""
-    # TODO
     # Change permissions for the top-level folder
     #os.chmod(path, 502, 20)
     os.chown(dir, uid, gid, follow_symlinks)
