@@ -20,7 +20,7 @@ History:
 """
 
 OPT_DIR = '/opt'
-BIN_DIR = '/usr/local/bin/'  # /opt/bin/ ????
+BIN_DIR = '/usr/local/bin/'
 DESKTOP_DIR = '/usr/share/applications/'
 ICON_DIR = '/usr/share/pixmaps/'
 INSTALL_DIR = os.path.join(OPT_DIR, '.installer')
@@ -100,6 +100,9 @@ class Application:
         with open(logFile, "r") as log:
             return log.read().splitlines()
     
+    def printShortSummary(self):
+        print(f'{self.name:<20} {self.state.name:<12} {self.appInstallDir}')
+        
     def printSummary(self):
         dirs = []
         dirs.append(f'{self.appDir}')
@@ -135,7 +138,7 @@ class EmptyTask:
 class InstallTask:
     def __init__(self, app, files, update, exclude):
         if app.state == ApplicationState.ALIAS:
-            raise OptError(f'Application "{app.name}" is available but is an alias')
+            raise OptError(f'Application "{app.name}" is available but is an alias. Choose another application name or delete the alias application.')
         elif app.state == ApplicationState.UNMANAGED:
             raise OptError(f'Application "{app.name}" is not managed by opt.py. Choose another application name or delete the application directory.')
         elif update and app.state == ApplicationState.NEW:
@@ -198,9 +201,7 @@ class InstallTask:
                     fileutil.extractArchive(file, self.app.appInstallDir)
                 else:
                     fileutil.copyFileOrFolder(file, self.app.appInstallDir)
-                    ## TODO shutil.copy2(file, targetDir)
             # set owner
-            ## TODO
             #fileutil.chown_recursively(self.app.appInstallDir)
             # _restore_exclusions
             fileutil.copyFileOrFolder(tmpDir, self.app.appInstallDir)
@@ -213,6 +214,9 @@ class InstallTask:
             # _save_log
             log.write(f'{self.app.appInstallDir}\n')
             log.write(f'{self.app.appDir}\n')
+
+        # set permisions (does not work in with section)
+        os.chmod(self.app.appInstallDir, 0o755)
 
 def installOrUpdate(args, update):
     existing, nonExisting = _validateFiles(args.file)
@@ -350,8 +354,6 @@ class RemoveTask:
         
     def execute(self):
         for file in self.files:
-            # TODO Ist islink notwendig, kann exists bei Links False zurückgeben?
-            # if os.path.exists(file) or os.path.islink(file):
             if os.path.islink(file):
                 os.unlink(file)
             elif os.path.isdir(file):
@@ -387,7 +389,7 @@ def listApps(args):
                 continue
             if os.path.isdir(appDir):
                 app = Application(file)
-                app.printSummary()
+                app.printShortSummary()
             
     else:
         app = Application(args.name)
