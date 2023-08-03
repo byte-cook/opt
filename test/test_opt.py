@@ -78,7 +78,27 @@ class TestOpt(unittest.TestCase):
         print('++++++++++ TEST UPDATE ++++++++++')
         self._installOrUpdate(APP_NAME, os.path.join(PROJECT_DIR, 'resources/test_file1.txt'), ['test_file1.txt'])
         self._installOrUpdate(APP_NAME, os.path.join(PROJECT_DIR, 'resources/test_file2.txt'), ['test_file2.txt'], update=True)
-    
+    def test_update_overwrite(self):
+        print('++++++++++ TEST UPDATE OVERWRITE ++++++++++')
+        self._installOrUpdate(APP_NAME, os.path.join(PROJECT_DIR, 'resources/test_file.tar'), ['test_file1.txt', 'test_file2.txt'])
+        print('+++++ mod file')
+        expectedFile = os.path.join(self._getAppDir(APP_NAME), 'test_file1.txt')
+        with open(expectedFile, 'w') as f:
+            f.write('Config: 2')
+        print('+++++ update')
+        opt.main(['--debug', '-y', 'update', APP_NAME, 'resources/test_file.tar'])
+        self.assertTrue(os.path.getsize(expectedFile) == 0)
+    def test_update_exclude(self):
+        print('++++++++++ TEST UPDATE EXCLUDE ++++++++++')
+        self._installOrUpdate(APP_NAME, os.path.join(PROJECT_DIR, 'resources/test_file.tar'), ['test_file1.txt', 'test_file2.txt'])
+        print('+++++ mod file')
+        expectedFile = os.path.join(self._getAppDir(APP_NAME), 'test_file1.txt')
+        with open(expectedFile, 'w') as f:
+            f.write('Config: 2')
+        print('+++++ update')
+        opt.main(['--debug', '-y', 'update', '--exclude', expectedFile, APP_NAME, 'resources/test_file.tar'])
+        self.assertTrue(os.path.getsize(expectedFile) > 0)
+        
     def test_list(self):
         print('++++++++++ TEST LIST ++++++++++')
         APP_NAME_2 = 'app-v2'
