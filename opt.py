@@ -25,6 +25,16 @@ DESKTOP_DIR = '/usr/share/applications/'
 ICON_DIR = '/usr/share/pixmaps/'
 INSTALL_DIR = os.path.join(OPT_DIR, '.installer')
 
+# ANSI colors
+ANSI_BOLD = '\033[1m'
+ANSI_END = '\033[0m'
+ANSI_RED = '\033[31m'
+ANSI_MAGENTA = '\033[35m'
+ANSI_YELLOW = '\033[33m'
+ANSI_CYAN = '\033[36m'
+if os.name == 'nt':
+    os.system("")
+
 # commands
 CMD_LIST = 'list'
 CMD_INSTALL = 'install'
@@ -42,32 +52,42 @@ class OptError(Exception):
 
 class FileOp:
     """File operation with source/destination files."""
-    def __init__(self, file, targetDir, targetFileName=None):
+    def __init__(self, file, targetDir, targetFileName=None, alias=False):
         self.src = os.path.abspath(file)
         if targetFileName:
             self.dst = os.path.abspath(os.path.join(targetDir, targetFileName))
         else:
             self.dst = os.path.abspath(os.path.join(targetDir, os.path.basename(file)))
+        self.alias = alias
     
     def __str__(self):
-        exists = "!" if self.existsDst() else ""
-        return f'{exists}{self.src}'
+        exists = f'{ANSI_RED}!' if self.existsDst() else ''
+        if self.alias:
+            return f'{exists} {self.dst} -> {self.src}{ANSI_END}'
+        else:
+            return f'{exists} {self.src}{ANSI_END}'
         
     def __lt__(self, other):
         return self.src < other.src
-
-    def getAliasString(self):
-        exists = "!" if self.existsDst() else ""
-        return f'{exists} {self.dst} -> {self.src}'
     
     def existsDst(self):
-        return os.path.exists(self.dst)
+        return os.path.exists(self.dst) or os.path.islink(self.dst)
 
 class ApplicationState(Enum):
     NEW = 1
     INSTALLED = 2
     ALIAS = 3
     UNMANAGED = 4
+    
+    def __str__(self):
+        if self == ApplicationState.UNMANAGED:
+            ansiColor = ANSI_MAGENTA
+        elif self == ApplicationState.ALIAS:
+            ansiColor = ANSI_YELLOW
+        else:
+            ansiColor = ANSI_CYAN
+        return f'{ansiColor}{self.name}{ANSI_END}'
+    
 class Application:
     def __init__(self, name):
         self.name = name
@@ -101,8 +121,8 @@ class Application:
             return log.read().splitlines()
     
     def printShortSummary(self):
-        print(f'{self.name:<20} {self.state.name:<12} {self.appInstallDir}')
-        
+        print(f'{str(self):<35} {str(self.state):<20} {self.appInstallDir}')
+    
     def printSummary(self):
         dirs = []
         dirs.append(f'{self.appDir}')
@@ -110,7 +130,7 @@ class Application:
             dirs.append(f'Installed at: {self.appInstallDir}')
         if self.state == ApplicationState.ALIAS:
             dirs.append(f'Linking to:   {self.aliasTarget}')
-        _printList(f'== {self.name+" ":=<30} {self.state.name+" ":=<20}', dirs)
+        _printList(f'== {str(self)+" ":=<40} {str(self.state)+" ":=<30}', dirs)
         print()
     
     def printDetails(self):
@@ -121,24 +141,25 @@ class Application:
         files.extend(self.readLogFile(CMD_DESKTOP))
         files.extend(self.readLogFile(CMD_MENU_DEPRECATED))
         files.extend(self.readLogFile(CMD_PATH))
-        # remove duplicates
-        files = set(files)
-        existing, nonExisting = _validateFiles(files)
+        existing, nonExisting = _validateFiles(files, brokenLinks=True)
         existing.sort()
         if files:
             _printList('Related files and folders:', existing)
 
+    def __str__(self):
+        return f'{ANSI_BOLD}{self.name}{ANSI_END}'
+
 class EmptyTask:
     def printSummary(self):
-        pass
+        self.overwrite = False
         
     def execute(self):
         pass
 
 class InstallTask:
-    def __init__(self, app, files, update, exclude):
+    def __init__(self, app, files, update, delete, keepFiles):
         if app.state == ApplicationState.ALIAS:
-            raise OptError(f'Application "{app.name}" is available but is an alias. Choose another application name or delete the alias application.')
+            raise OptError(f'Application "{app.name}" is available but is an alias. Choose another application name or delete the alias application first.')
         elif app.state == ApplicationState.UNMANAGED:
             raise OptError(f'Application "{app.name}" is not managed by opt.py. Choose another application name or delete the application directory.')
         elif update and app.state == ApplicationState.NEW:
@@ -149,16 +170,17 @@ class InstallTask:
         self.files = files
         self.files.sort()
         self.update = update
-        self.exclude = []
-        for e in exclude:
+        self.delete = delete
+        self.keep = []
+        for e in keepFiles:
             e = os.path.abspath(e)
             if not os.path.exists(e):
-                raise OptError(f'Exclusion "{e}" does not exist')
+                raise OptError(f'File "{e}" does not exist')
             elif not app.isAppFile(e):
-                raise OptError(f'Exclusion "{e}" does not belong to application "{app.name}"')
+                raise OptError(f'File "{e}" does not belong to application "{app.name}"')
             else:
-                self.exclude.append(e)
-        self.exclude.sort()
+                self.keep.append(e)
+        self.keep.sort()
     
     def getTargetFile(self, file, fileInArchive=None):
         if file in self.files:
@@ -167,17 +189,11 @@ class InstallTask:
         return None
         
     def printSummary(self):
-        if self.update:
-            excludeMsg = ', excluding:' if self.exclude else ''
-            _printList(f'Delete content of "{self.app.appInstallDir}"{excludeMsg}', self.exclude)
+        if self.delete:
+            keepMsg = ', except:' if self.keep else ''
+            _printList(f'Delete content of "{self.app.appInstallDir}"{keepMsg}', self.keep)
         _printList(f'Copy files to "{self.app.appInstallDir}":', self.files)
-        print(f'Create symlink in "{self.app.appDir}"')
-        
-    def getFilesByRelevance(self):
-        # Prefer files with same prefix as application
-        files = self.files.copy()
-        files.sort(key=lambda f: (1 if os.path.basename(f).startswith(self.app.name) else 100) + len(f))
-        return files
+        print(f'Create symlink "{self.app.appDir}"')
         
     def execute(self):
         # ensure install dir is created
@@ -186,13 +202,13 @@ class InstallTask:
         logFile = self.app.getLogFile(CMD_UPDATE if self.update else CMD_INSTALL)
         with open(logFile, 'a') as log, tempfile.TemporaryDirectory() as tmpDir:
             logging.debug(f'Use temporary directory: {tmpDir}')
-            # _save_exlusions
-            for e in self.exclude:
+            # save files to keep
+            for e in self.keep:
                 tmpRelPath = os.path.relpath(e, start=self.app.appDir) # /opt/name/folder/file.ext -> folder/file.ext
                 tmpFile = os.path.join(tmpDir, tmpRelPath) # folder/file -> <tmpDir>/folder/file
                 fileutil.copyFileOrFolder(e, os.path.dirname(tmpFile) if os.path.isfile(e) else tmpFile)
             
-            if os.path.exists(self.app.appInstallDir):
+            if self.delete and os.path.exists(self.app.appInstallDir):
                 shutil.rmtree(self.app.appInstallDir)
             os.makedirs(self.app.appInstallDir, exist_ok=True)
             # copy files
@@ -203,10 +219,10 @@ class InstallTask:
                     fileutil.copyFileOrFolder(file, self.app.appInstallDir)
             # set owner
             #fileutil.chown_recursively(self.app.appInstallDir)
-            # _restore_exclusions
+            # restore files to keep
             fileutil.copyFileOrFolder(tmpDir, self.app.appInstallDir)
             # create symlink
-            if os.path.exists(self.app.appDir):
+            if os.path.islink(self.app.appDir):
                 os.unlink(self.app.appDir) 
             symlinkSrc = fileutil.skipContainerDirs(self.app.appInstallDir)
             os.symlink(symlinkSrc, self.app.appDir, target_is_directory=True)
@@ -225,15 +241,19 @@ def installOrUpdate(args, update):
     # app
     app = Application(args.name)
     # install
-    install = InstallTask(app, existing, update, args.exclude if update and args.exclude is not None else [])
+    keepFiles = args.keep if update and args.keep is not None else []
+    install = InstallTask(app, existing, update, update and args.delete, keepFiles)
     # path
     if update or args.noPath:
         path = EmptyTask()
     else:
-        # auto-detect best matching executable for $PATH
-        installFiles = install.getFilesByRelevance()
-        if installFiles:
-            installFile = installFiles[0]
+        path = EmptyTask()
+        
+        # try to auto-detect best matching executable for $PATH
+        installFiles = install.files.copy()
+        installFiles.sort(key=lambda f: (1 if os.path.basename(f).startswith(app.name) else 100) + len(f)) # Prefer files with same prefix as application
+        logging.debug(f'File for path: {installFiles}')
+        for installFile in installFiles:
             if fileutil.isArchiveFile(installFile):
                 with tempfile.TemporaryDirectory() as tmpDir:
                     fileutil.extractArchive(installFile, tmpDir)
@@ -246,15 +266,20 @@ def installOrUpdate(args, update):
                         fileInArchive = fileCandidates[0]
                         target = install.getTargetFile(installFile, fileInArchive)
                         path = PathTask(app, target, checkTarget=False)
+                        break
             else:
-                target = install.getTargetFile(installFile)
-                path = PathTask(app, target, checkTarget=False)
+                if os.access(installFile, os.X_OK):
+                    logging.debug(f'Executable file found: {installFile}')
+                    target = install.getTargetFile(installFile)
+                    path = PathTask(app, target, checkTarget=False)
+                    break
     
     app.printSummary()
     install.printSummary()
     path.printSummary()
     print()
-    doContinue = True if args.noPrompt else getYesOrNo('Do you want to continue?', True)
+    overwriteMsg = f' (overwrite existing files marked with prefix "!")' if path.overwrite else ''
+    doContinue = True if args.noPrompt else getYesOrNo(f'Do you want to continue{overwriteMsg}?', True)
     if doContinue:
         install.execute()
         path.execute()
@@ -273,11 +298,11 @@ class PathTask:
                 raise OptError(f'File "{target}" is not executable')
         self.app = app
         self.linkName = linkName if linkName else os.path.basename(target)
-        self.op = FileOp(target, BIN_DIR, self.linkName)
+        self.op = FileOp(target, BIN_DIR, self.linkName, True)
         self.overwrite = self.op.existsDst()
     
     def printSummary(self):
-        _printList(f'Add to $PATH by creating alias in "{BIN_DIR}":', [self.op], lambda op: op.getAliasString())
+        _printList(f'Add to $PATH by creating alias in "{BIN_DIR}":', [self.op])
         
     def execute(self):
         logFile = self.app.getLogFile(CMD_PATH)
@@ -290,8 +315,11 @@ class PathTask:
             if not os.path.exists(self.op.src): 
                 print(f'Warning: Alias could not be created because "{self.op.src}" does not exist')
                 return
+            if not os.access(self.op.src, os.X_OK):
+                print(f'Warning: Alias could not be created because "{self.op.src}" is not executable')
+                return
             # remove old alias if exists
-            if os.path.exists(self.op.dst): 
+            if os.path.islink(self.op.dst): 
                 os.unlink(self.op.dst) 
             os.symlink(self.op.src, self.op.dst, target_is_directory=False)
             log.write(f'{self.op.dst}\n')
@@ -307,7 +335,7 @@ def path(args):
     app.printSummary()
     path.printSummary()
     print()
-    doContinue = True if args.noPrompt or not path.overwrite else getYesOrNo('Overwrite exiting files (marked with prefix "!")?', False)
+    doContinue = True if args.noPrompt or not path.overwrite else getYesOrNo('Overwrite existing files marked with prefix "!"?', False)
     if doContinue:
         path.execute()
 
@@ -338,9 +366,9 @@ class RemoveTask:
         if removeAll or pathOnly:
             files.extend(app.readLogFile(CMD_PATH))
             logFiles.append(app.getLogFile(CMD_PATH))
-        existing, nonExisting = _validateFiles(set(files))
+        existing, nonExisting = _validateFiles(set(files), brokenLinks=True)
         self.files = sorted(existing)
-        existing, nonExisting = _validateFiles(set(logFiles))
+        existing, nonExisting = _validateFiles(set(logFiles), brokenLinks=True)
         self.logFiles = sorted(existing)
         self.empty = not self.files and not self.logFiles
         
@@ -446,7 +474,7 @@ def desktop(args):
     app.printSummary()
     desktop.printSummary()
     print()
-    doContinue = True if args.noPrompt or not desktop.overwrite else getYesOrNo('Overwrite exiting files (marked with prefix "!")?', False)
+    doContinue = True if args.noPrompt or not desktop.overwrite else getYesOrNo('Overwrite existing files marked with prefix "!"?', False)
     if doContinue:
         desktop.execute()
 
@@ -454,43 +482,33 @@ class AliasTask:
     def __init__(self, aliasApp, targetApp):
         if targetApp.name == aliasApp.name:
             raise OptError(f'Application and target must not be identical: {targetApp.name}')
-        if aliasApp.state == ApplicationState.UNMANAGED:
-            raise OptError(f'Application "{aliasApp.name}" is not managed by opt.py')
-        if targetApp.state == ApplicationState.UNMANAGED:
+        elif aliasApp.state == ApplicationState.UNMANAGED:
+            raise OptError(f'Application "{aliasApp.name}" is not managed by opt.py. Choose another application name or delete the application directory.')
+        elif aliasApp.state == ApplicationState.INSTALLED:
+            raise OptError(f'Application "{aliasApp.name}" is already installed. Choose another application name or remove the application first.')
+        elif targetApp.state == ApplicationState.UNMANAGED:
             raise OptError(f'Application "{targetApp.name}" is not managed by opt.py')
-        if targetApp.state == ApplicationState.NEW:
+        elif targetApp.state == ApplicationState.NEW:
             raise OptError(f'Application "{targetApp.name}" does not exist')
         self.aliasApp = aliasApp
         self.targetApp = targetApp
-        self.overwrite = self.aliasApp.state in [ApplicationState.INSTALLED, ApplicationState.ALIAS]
+        self.overwrite = self.aliasApp.state in [ApplicationState.ALIAS]
 
     def printSummary(self):
-        _printList(f'Create alias "{self.aliasApp.name}" for application "{self.targetApp.name}"', []) #, [self.aliasApp], lambda op: op.getAliasString())
+        _printList(f'Create alias "{self.aliasApp.name}" for application "{self.targetApp.name}"', []) 
         
     def execute(self):
         logFile = self.aliasApp.getLogFile(CMD_ALIAS)
         with open(logFile, 'a') as log:
-            # if os.path.exists(self.op.dst): 
-                # os.unlink(self.op.dst) 
-            # os.symlink(self.op.src, self.op.dst, target_is_directory=False)
-
             # clean application folder with old data
-            if os.path.exists(self.aliasApp.appInstallDir):
-                if os.path.islink(self.aliasApp.appInstallDir): # os.path.isdir(self.aliasApp.appInstallDir):
-                    os.unlink(self.aliasApp.appInstallDir) 
-                else:
-                    shutil.rmtree(self.aliasApp.appInstallDir)
+            if os.path.islink(self.aliasApp.appInstallDir):
+                os.unlink(self.aliasApp.appInstallDir) 
             # create alias symlink to target
             os.symlink(self.targetApp.appDir, self.aliasApp.appInstallDir, target_is_directory=True)
             log.write(f'{self.aliasApp.appInstallDir}\n')
-            # utils.execute_command(cmd=["ln", "-sf",  "--no-dereference", targetDataFolder, param.dataFolder], verbose=param.verbose, simulate=param.simulate)
-            # _save_log(param, param.dataFolder)
             if not os.path.exists(self.aliasApp.appDir):
                 os.symlink(self.aliasApp.appInstallDir, self.aliasApp.appDir, target_is_directory=True)
                 log.write(f'{self.aliasApp.appDir}\n')
-            # if not os.path.exists(param.symlink):
-                # utils.execute_command(cmd=["ln", "-sf",  "--no-dereference", param.dataFolder, param.symlink], verbose=param.verbose, simulate=param.simulate)
-                # _save_log(param, param.symlink)
 
 def alias(args):
     """Create an alias for an application."""
@@ -505,12 +523,15 @@ def alias(args):
     if doContinue:
         alias.execute()
 
-def _validateFiles(files):
-    """Check if files exist and convert to absolute paths."""
+def _validateFiles(files, brokenLinks=False):
+    """Check if files exist, convert to absolute paths and remove duplicates."""
     existing = []
     nonExisting = []
     for file in set(files):
         if os.path.exists(file):
+            existing.append(os.path.abspath(file))
+        elif brokenLinks and os.path.islink(file):
+            # os.path.exists returns false for broken links
             existing.append(os.path.abspath(file))
         else:
             nonExisting.append(os.path.abspath(file))
@@ -547,22 +568,35 @@ def main(argv=None):
             - When uninstalling the program, all these changes should be undone.
 
             To simplify this, Opt.py provides a simple command line interface modeled after APT. 
+            The general structure of a command is as follows:
+            > opt.py <command> <options> <app-name> ...
             
-            Example:
+            Example to install "Opt.py":
             
-            General structure of the commands:
-            > opt.py <command> <app-name> ...
-
             List installed applications:
             > opt.py list
             
-            Install application:
+            Install application "opt" and add automatically to $PATH:
+            > opt.py install opt opt.py fileutil.py
+            
+            Update application "opt" (opt.py has changed, fileutil.py remains):
+            > opt.py update opt opt.py
+            
+            Update application "opt" by a complete new version:
+            > opt.py update --delete opt opt.py fileutil.py
+            
+            Remove application "opt":
+            > opt.py remove opt
+
+            General example:
+
+            Install application "application-12-3":
             > opt.py install application-12-3 application-12.3.tar.gz
 
-            Install another version of the same application:
+            Install another version of the same application ("application-19-81"):
             > opt.py install application-19-81 application-19.81.tar.gz
             
-            Create alias (application refers to application-12-3):
+            Create alias ("application" refers to "application-12-3"):
             > opt.py alias application application-12-3
 
             Extend $PATH variable:
@@ -571,15 +605,11 @@ def main(argv=None):
             Add desktop entry:
             > opt.py desktop application application.desktop application.png
 
-            Change alias (application refers to application-19-81):
+            Change alias ("application" refers to "application-19-81"):
             > opt.py alias application application-19-81
             
             Delete old version and all related files:
             > opt.py remove application-12-3
-            
-            Delete all versions of this application:
-            > opt.py remove application-19-81
-            > opt.py remove application
             
             Directory strucuture:
             
@@ -606,15 +636,13 @@ def main(argv=None):
         listParser = subparsers.add_parser(CMD_LIST, help='')
         # install
         installParser = subparsers.add_parser(CMD_INSTALL, help='install a new application', description='Installs a new application')
-        installParser.add_argument('--no-path', default=False, dest='noPath', action='store_true', help='')
-        #installParser.add_argument("--owner", help="owner of all installed files", default="root")
+        installParser.add_argument('--no-path', default=False, dest='noPath', action='store_true', help='do not add application to $PATH automatically')
         installParser.add_argument('name', help='application name')
         installParser.add_argument('file', nargs='+', help='file to install')
         # update
-        updateParser = subparsers.add_parser(CMD_UPDATE, help='update application', description='Replace the application data by the given file(s). Use "--exclude" to keep settings files.')
-        updateParser.add_argument('--no-path', dest='noPath', default=False, action='store_true', help='')
-        updateParser.add_argument('--exclude', dest='exclude', action='append', help='exclude file')
-        #updateParser.add_argument("--owner", help="owner of all installed files", default="root")
+        updateParser = subparsers.add_parser(CMD_UPDATE, help='update application', description='Replace the application data by the given file(s). By default, all existing application files remain in place. You can use "--delete" to delete all application files and "--keep" to keep individual files (e.g. for settings).')
+        updateParser.add_argument('--delete', dest='delete', action='store_true', help='delete all files before updating')
+        updateParser.add_argument('--keep', dest='keep', action='append', help='keep a file or folder')
         updateParser.add_argument('name', help='application name')
         updateParser.add_argument('file', nargs='+', help='file to install')
         # remove
