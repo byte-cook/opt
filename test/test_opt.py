@@ -28,11 +28,13 @@ class TestOpt(unittest.TestCase):
         opt.OPT_DIR = os.path.abspath(os.path.join(ROOT_DIR, 'opt'))
         opt.BIN_DIR = os.path.abspath(os.path.join(ROOT_DIR, 'usr-local-bin'))
         opt.DESKTOP_DIR = os.path.join(ROOT_DIR, 'usr-share-applications')
+        opt.AUTOCOMPLETE_DIR = os.path.join(ROOT_DIR, 'etc-bash_completion.d')
         opt.ICON_DIR = os.path.join(ROOT_DIR, 'usr-share-piximage')
         opt.INSTALL_DIR = os.path.join(opt.OPT_DIR, '.installer')
         os.makedirs(opt.OPT_DIR, exist_ok=True)
         os.makedirs(opt.BIN_DIR, exist_ok=True)
         os.makedirs(opt.DESKTOP_DIR, exist_ok=True)
+        os.makedirs(opt.AUTOCOMPLETE_DIR, exist_ok=True)
         os.makedirs(opt.ICON_DIR, exist_ok=True)
     
     def tearDown(self):
@@ -75,6 +77,9 @@ class TestOpt(unittest.TestCase):
         self._installOrUpdate(APP_NAME, os.path.join(PROJECT_DIR, 'resources'), ['test_file1.txt', 'test_folder1_test_file1.zip'])
     def test_install_path_noexec(self):
         print('++++++++++ test_install_path_noexec ++++++++++')
+        if os.name == 'nt':
+            print('skipped on Windows')
+            return
         execFile = os.path.join(PROJECT_DIR, 'resources/exec-app.bin')
         nonExecFile = os.path.join(PROJECT_DIR, 'resources/exec.xml')
         os.chmod(execFile, 0o666) # rw
@@ -83,6 +88,9 @@ class TestOpt(unittest.TestCase):
         self.assertTrue(self._isDirEmpty(opt.BIN_DIR), msg='No executable file available')
     def test_install_path_exec(self):
         print('++++++++++ test_install_path_exec ++++++++++')
+        if os.name == 'nt':
+            print('skipped on Windows')
+            return
         execFile = os.path.join(PROJECT_DIR, 'resources/exec-app.bin')
         nonExecFile = os.path.join(PROJECT_DIR, 'resources/exec.xml')
         os.chmod(execFile, 0o777) # rwx
@@ -201,6 +209,13 @@ class TestOpt(unittest.TestCase):
         opt.main(['--debug', '-y', 'path', APP_NAME, 'resources/test_file1.txt'])
         self.assertTrue(self._isDirEmpty(opt.BIN_DIR))
 
+    def test_autocomplete(self):
+        print('++++++++++ test_autocomplete ++++++++++')
+        self._installOrUpdate(APP_NAME, os.path.join(PROJECT_DIR, 'resources/test_file1.txt'))
+        opt.main(['--debug', 'autocomplete', APP_NAME, 'resources/test_file1.txt'])
+        expectedFile = os.path.join(opt.AUTOCOMPLETE_DIR, 'test_file1.txt')
+        self.assertTrue(os.path.exists(expectedFile), msg=expectedFile)
+
     def test_alias(self):
         print('++++++++++ test_alias ++++++++++')
         APP_ALIAS = 'app-alias'
@@ -249,11 +264,13 @@ class TestOpt(unittest.TestCase):
         executable = 'test_file1.txt'
         self._installOrUpdate(APP_NAME, os.path.join(PROJECT_DIR, 'resources/test_file.tar'))
         self._path(APP_NAME, executable)
+        opt.main(['--debug', 'autocomplete', APP_NAME, 'resources/test_file1.txt'])
         self._remove(APP_NAME)
         self.assertFalse(os.path.exists(os.path.join(opt.BIN_DIR, executable)))
         self.assertTrue(self._isDirEmpty(opt.BIN_DIR))
         self.assertTrue(self._isDirEmpty(opt.INSTALL_DIR))
         self.assertTrue(self._isDirEmpty(opt.DESKTOP_DIR))
+        self.assertTrue(self._isDirEmpty(opt.AUTOCOMPLETE_DIR))
         self.assertTrue(self._isDirEmpty(opt.ICON_DIR))
     def test_remove_brokenlink(self):
         print('++++++++++ test_remove_brokenlink ++++++++++')

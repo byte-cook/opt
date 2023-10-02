@@ -22,6 +22,7 @@ History:
 OPT_DIR = '/opt'
 BIN_DIR = '/usr/local/bin/'
 DESKTOP_DIR = '/usr/share/applications/'
+AUTOCOMPLETE_DIR = '/etc/bash_completion.d'
 ICON_DIR = '/usr/share/pixmaps/'
 INSTALL_DIR = os.path.join(OPT_DIR, '.installer')
 
@@ -41,6 +42,7 @@ CMD_INSTALL = 'install'
 CMD_UPDATE = 'update'
 CMD_REMOVE = 'remove'
 CMD_DESKTOP = 'desktop'
+CMD_AUTOCOMPLETE = 'autocomplete'
 CMD_MENU_DEPRECATED = "menu"
 CMD_ALIAS = 'alias'
 CMD_PATH = 'path'
@@ -139,6 +141,7 @@ class Application:
         files.extend(self.readLogFile(CMD_UPDATE))
         files.extend(self.readLogFile(CMD_ALIAS))
         files.extend(self.readLogFile(CMD_DESKTOP))
+        files.extend(self.readLogFile(CMD_AUTOCOMPLETE))
         files.extend(self.readLogFile(CMD_MENU_DEPRECATED))
         files.extend(self.readLogFile(CMD_PATH))
         existing, nonExisting = _validateFiles(files, brokenLinks=True)
@@ -355,9 +358,11 @@ class RemoveTask:
             files.extend(app.readLogFile(CMD_INSTALL))
             files.extend(app.readLogFile(CMD_UPDATE))
             files.extend(app.readLogFile(CMD_ALIAS))
+            files.extend(app.readLogFile(CMD_AUTOCOMPLETE))
             logFiles.append(app.getLogFile(CMD_INSTALL))
             logFiles.append(app.getLogFile(CMD_UPDATE))
             logFiles.append(app.getLogFile(CMD_ALIAS))
+            logFiles.append(app.getLogFile(CMD_AUTOCOMPLETE))
         if removeAll or desktopOnly:
             files.extend(app.readLogFile(CMD_DESKTOP))
             files.extend(app.readLogFile(CMD_MENU_DEPRECATED))
@@ -478,6 +483,39 @@ def desktop(args):
     if doContinue:
         desktop.execute()
 
+class AutoCompleteTask:
+    def __init__(self, app, files):
+        self.app = app
+        self.overwrite = False
+        #self.shellScript = files[0]
+        self.op = FileOp(files[0], AUTOCOMPLETE_DIR)
+        self.overwrite = self.op.existsDst()
+
+    def printSummary(self):
+        _printList(f'Copy auto completion script to "{AUTOCOMPLETE_DIR}":', [self.op])
+
+    def execute(self):
+        logFile = self.app.getLogFile(CMD_AUTOCOMPLETE)
+        with open(logFile, 'a') as log:
+            shutil.copyfile(self.op.src, self.op.dst)
+            log.write(f'{self.op.dst}\n')
+    
+def autocomplete(args):
+    """Install auto completion script."""
+    # see: https://www.baeldung.com/linux/shell-auto-completion
+    existing, nonExisting = _validateFiles([args.file])
+    if nonExisting:
+        raise OptError('File(s) do not exist:', nonExisting)
+    app = Application(args.name)
+    autocomplete = AutoCompleteTask(app, existing)
+
+    app.printSummary()
+    autocomplete.printSummary()
+    print()
+    doContinue = True if args.noPrompt or not autocomplete.overwrite else getYesOrNo('Overwrite existing files marked with prefix "!"?', False)
+    if doContinue:
+        autocomplete.execute()
+
 class AliasTask:
     def __init__(self, aliasApp, targetApp):
         if targetApp.name == aliasApp.name:
@@ -556,7 +594,7 @@ def getYesOrNo(question, default=True):
         else:
             print('Please respond with "yes" or "no" (or "y" or "n").')
             
-def main(argv=None):
+def main(argv=None, rootRequired=False):
     try:
         PROG_DESC = """\
             Opt.py is an installation manager for the /opt directory. The /opt directory is reserved for all the software and add-on packages that are not part of the default installation. 
@@ -632,8 +670,6 @@ def main(argv=None):
         parser.add_argument('-y', '--yes', action="store_true", dest="noPrompt", help="answer all questions with yes")
 
         subparsers = parser.add_subparsers(dest='command')
-        # list
-        listParser = subparsers.add_parser(CMD_LIST, help='')
         # install
         installParser = subparsers.add_parser(CMD_INSTALL, help='install a new application', description='Installs a new application')
         installParser.add_argument('--no-path', default=False, dest='noPath', action='store_true', help='do not add application to $PATH automatically')
@@ -655,6 +691,10 @@ def main(argv=None):
         menuParser = subparsers.add_parser(CMD_DESKTOP, help="create menu entry according to freedesktop.org specifications", description="Create a menu entry by using a .desktop file")
         menuParser.add_argument("name", help="application name")
         menuParser.add_argument("file", nargs="+", help="*.desktop/*.png file")
+        # autocomplete
+        autoParser = subparsers.add_parser(CMD_AUTOCOMPLETE, help="copy shell auto completion script to the right place", description="Add support for shell auto completion")
+        autoParser.add_argument("name", help="application name")
+        autoParser.add_argument("file", help="auto completion script")
         # path
         pathParser = subparsers.add_parser(CMD_PATH, help="add application to $PATH", description=f'Add application to $PATH by creating a symlink in "{BIN_DIR}"')
         pathParser.add_argument("--link-name", dest='linkName', help='link name in $PATH')
@@ -673,7 +713,7 @@ def main(argv=None):
         level = logging.DEBUG if args.debug else logging.WARNING
         logging.basicConfig(format='%(levelname)s: %(message)s', level=level, force=True)
         
-        if os.geteuid() != 0:
+        if rootRequired and os.geteuid() != 0:
             raise OptError('Root privileges required')
         if args.command is None:
             # if no command is specified, print application list
@@ -690,6 +730,8 @@ def main(argv=None):
             path(args)
         elif args.command == CMD_DESKTOP:
             desktop(args)
+        elif args.command == CMD_AUTOCOMPLETE:
+            autocomplete(args)
         elif args.command == CMD_LIST:
             listApps(args)
         elif args.command == CMD_ALIAS:
@@ -705,5 +747,5 @@ def main(argv=None):
             traceback.print_exc()
 
 if __name__ == '__main__':
-    main()
+    main(rootRequired=True)
 
