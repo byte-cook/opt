@@ -31,6 +31,13 @@ chmod +x opt.py
 ```
 The $PATH variable is automatically extended!
 
+
+4. (Optional) Install shell auto completion:
+```
+curl -LJO https://raw.githubusercontent.com/byte-cook/opt/main/opt-sh-prompt.sh
+opt.py autocomplete opt opt-sh-prompt.sh
+```
+
 ## Uninstall
 
 Use this command:
