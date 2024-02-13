@@ -222,13 +222,13 @@ class InstallTask:
                     fileutil.copyFileOrFolder(file, self.app.appInstallDir)
             # set owner
             #fileutil.chown_recursively(self.app.appInstallDir)
-            # restore files to keep
-            fileutil.copyFileOrFolder(tmpDir, self.app.appInstallDir)
             # create symlink
             if os.path.islink(self.app.appDir):
                 os.unlink(self.app.appDir) 
             symlinkSrc = fileutil.skipContainerDirs(self.app.appInstallDir)
             os.symlink(symlinkSrc, self.app.appDir, target_is_directory=True)
+            # restore files to keep
+            fileutil.copyFileOrFolder(tmpDir, self.app.appInstallDir)
             
             # _save_log
             log.write(f'{self.app.appInstallDir}\n')
