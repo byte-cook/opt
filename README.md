@@ -15,7 +15,7 @@ Supported file formats are: .zip, .tar.bz2, .tar, .tar.gz, .tgz, .tar.xz
 ## Install
 1. Install Python3 as follows in Ubuntu/Debian Linux:
 ```
-sudo apt install python3.6
+sudo apt install python3
 ```
 
 2. Download Opt.py and set execute permissions:
@@ -30,7 +30,6 @@ chmod +x opt.py
 sudo ./opt.py install opt opt.py fileutil.py
 ```
 The $PATH variable is automatically extended!
-
 
 4. (Optional) Install shell auto completion:
 ```
