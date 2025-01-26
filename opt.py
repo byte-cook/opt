@@ -495,6 +495,9 @@ class AutoCompleteTask:
         _printList(f'Copy auto completion script to "{AUTOCOMPLETE_DIR}":', [self.op])
 
     def execute(self):
+        # ensure target dir is created
+        os.makedirs(AUTOCOMPLETE_DIR, exist_ok=True)
+        
         logFile = self.app.getLogFile(CMD_AUTOCOMPLETE)
         with open(logFile, 'a') as log:
             shutil.copyfile(self.op.src, self.op.dst)

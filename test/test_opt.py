@@ -34,7 +34,6 @@ class TestOpt(unittest.TestCase):
         os.makedirs(opt.OPT_DIR, exist_ok=True)
         os.makedirs(opt.BIN_DIR, exist_ok=True)
         os.makedirs(opt.DESKTOP_DIR, exist_ok=True)
-        os.makedirs(opt.AUTOCOMPLETE_DIR, exist_ok=True)
         os.makedirs(opt.ICON_DIR, exist_ok=True)
     
     def tearDown(self):
